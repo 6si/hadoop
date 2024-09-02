@@ -75,8 +75,17 @@ public class TestSystemMetricsPublisher {
   private static TimelineServiceV1Publisher metricsPublisher;
   private static TimelineStore store;
 
+  private boolean rmTimelineServerV1PublisherBatchEnabled;
+  private int rmTimelineServerV1PublisherInterval;
+
+  public TestSystemMetricsPublisher(boolean rmTimelineServerV1PublisherBatchEnabled,
+                                    int rmTimelineServerV1PublisherInterval) {
+    this.rmTimelineServerV1PublisherBatchEnabled = rmTimelineServerV1PublisherBatchEnabled;
+    this.rmTimelineServerV1PublisherInterval = rmTimelineServerV1PublisherInterval;
+  }
+
   @BeforeClass
-  public static void setup() throws Exception {
+  public void setup() throws Exception {
     YarnConfiguration conf = new YarnConfiguration();
     conf.setBoolean(YarnConfiguration.TIMELINE_SERVICE_ENABLED, true);
     conf.setBoolean(YarnConfiguration.SYSTEM_METRICS_PUBLISHER_ENABLED, true);
@@ -87,6 +96,10 @@ public class TestSystemMetricsPublisher {
     conf.setInt(
         YarnConfiguration.RM_SYSTEM_METRICS_PUBLISHER_DISPATCHER_POOL_SIZE,
         2);
+    conf.setBoolean(YarnConfiguration.RM_TIMELINE_SERVER_V1_PUBLISHER_BATCH_ENABLED,
+            rmTimelineServerV1PublisherBatchEnabled);
+    conf.setInt(YarnConfiguration.RM_TIMELINE_SERVER_V1_PUBLISHER_INTERVAL,
+            rmTimelineServerV1PublisherInterval);
 
     timelineServer = new ApplicationHistoryServer();
     timelineServer.init(conf);
