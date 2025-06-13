@@ -20,6 +20,7 @@ package org.apache.hadoop.util;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
+import java.io.IOException;
 
 import org.apache.hadoop.test.GenericTestUtils;
 import org.apache.hadoop.util.HostsFileReader.HostDetails;
@@ -288,5 +289,63 @@ public class TestHostsFileReader {
     assertTrue(hfp.getExcludedHosts().contains("somehost2"));
     assertFalse(hfp.getExcludedHosts().contains("somehost5"));
 
+  }
+
+  @Test
+  public void testLazyRefresh() throws IOException {
+    FileWriter efw = new FileWriter(excludesFile);
+    FileWriter ifw = new FileWriter(includesFile);
+
+    efw.write("host1\n");
+    efw.write("host2\n");
+    efw.close();
+    ifw.write("host3\n");
+    ifw.write("host4\n");
+    ifw.close();
+
+    HostsFileReader hfp = new HostsFileReader(includesFile, excludesFile);
+
+    ifw = new FileWriter(includesFile);
+    ifw.close();
+
+    efw = new FileWriter(excludesFile, true);
+    efw.write("host3\n");
+    efw.write("host4\n");
+    efw.close();
+
+    hfp.lazyRefresh(includesFile, excludesFile);
+
+    HostDetails details = hfp.getHostDetails();
+    HostDetails lazyDetails = hfp.getLazyLoadedHostDetails();
+
+    assertEquals("Details: no. of excluded hosts", 2,
+        details.getExcludedHosts().size());
+    assertEquals("Details: no. of included hosts", 2,
+        details.getIncludedHosts().size());
+    assertEquals("LazyDetails: no. of excluded hosts", 4,
+        lazyDetails.getExcludedHosts().size());
+    assertEquals("LayDetails: no. of included hosts", 0,
+        lazyDetails.getIncludedHosts().size());
+
+    hfp.finishRefresh();
+
+    details = hfp.getHostDetails();
+    assertEquals("Details: no. of excluded hosts", 4,
+        details.getExcludedHosts().size());
+    assertEquals("Details: no. of included hosts", 0,
+        details.getIncludedHosts().size());
+    assertNull("Lazy host details should be null",
+        hfp.getLazyLoadedHostDetails());
+  }
+
+  @Test(expected = IllegalStateException.class)
+  public void testFinishRefreshWithoutLazyRefresh() throws IOException {
+    FileWriter efw = new FileWriter(excludesFile);
+    FileWriter ifw = new FileWriter(includesFile);
+    efw.close();
+    ifw.close();
+
+    HostsFileReader hfp = new HostsFileReader(includesFile, excludesFile);
+    hfp.finishRefresh();
   }
 }
