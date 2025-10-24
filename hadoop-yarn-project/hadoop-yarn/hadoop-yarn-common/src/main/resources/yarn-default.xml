@@ -5533,6 +5533,16 @@
 
   <property>
     <description>
+      Comma-separated list of environment variable name patterns to exclude from container debug output.
+      Any environment variable containing any of these patterns (case-insensitive) will be redacted from the
+      container launch script debug information.
+    </description>
+    <name>yarn.nodemanager.container-debug.exclude-env-vars</name>
+    <value>PASSWORD,TOKEN,KEY,SECRET</value>
+  </property>
+
+  <property>
+    <description>
       Whether or not the policy generator is running in read only (won't modify policies), default is false
     </description>
     <name>yarn.federation.gpg.policy.generator.readonly</name>

@@ -156,6 +156,12 @@ public class YarnConfiguration extends Configuration {
   public static final boolean DEFAULT_NM_LOG_CONTAINER_DEBUG_INFO = true;
   public static final boolean DEFAULT_NM_LOG_CONTAINER_DEBUG_INFO_ON_ERROR = false;
 
+  // Comma-separated list of patterns to exclude from container debug env prints
+  public static final String NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS =
+      YarnConfiguration.NM_PREFIX + "container-debug.exclude-env-vars";
+  public static final String DEFAULT_NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS =
+      "PASSWORD,TOKEN,KEY,SECRET";
+
   ////////////////////////////////
   // IPC Configs
   ////////////////////////////////
