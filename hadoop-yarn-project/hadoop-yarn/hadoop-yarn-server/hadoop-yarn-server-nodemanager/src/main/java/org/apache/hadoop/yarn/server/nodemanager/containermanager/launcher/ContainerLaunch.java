@@ -1354,14 +1354,47 @@ public class ContainerLaunch implements Callable<Integer> {
 
     @Override
     public void copyDebugInformation(Path src, Path dest) throws IOException {
-      line("# Creating copy of launch script");
-      line("cp \"", src.toUri().getPath(), "\" \"", dest.toUri().getPath(),
-          "\"");
-      // set permissions to 640 because we need to be able to run
-      // log aggregation in secure mode as well
-      if(dest.isAbsolute()) {
-        line("chmod 640 \"", dest.toUri().getPath(), "\"");
+      line("# Creating filtered copy of launch script with environment variable filtering");
+      line("# Source: ", src.toUri().getPath());
+      line("# Destination: ", dest.toUri().getPath());
+
+      // Prepare excluded patterns from config (comma-separated)
+      String exclude = conf.get(
+          YarnConfiguration.NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS,
+          YarnConfiguration.DEFAULT_NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS);
+      line("EXCLUDED_VARS=\"", exclude, "\"");
+      line("echo \"Excluding environment variables containing: $EXCLUDED_VARS\" >&2");
+      line("echo \"This list of varaibles wont be printed even present. check yarn.nodemanager.container-debug.exclude-env-vars in yarn-site.xml\" >&2");
+
+      // Create a temporary file for the filtered content with error handling
+      line("TMP_FILE=$(mktemp 2>/dev/null) || TMP_FILE=\"", dest.toUri().getPath(), ".tmp\"");
+      line("cleanup() { [ -n \"$TMP_FILE\" -a -f \"$TMP_FILE\" ] && rm -f \"$TMP_FILE\" 2>/dev/null || true; }");
+      line("trap cleanup EXIT");
+
+      // Filter: only redact export lines whose variable name contains any excluded pattern (case-insensitive)
+      line("awk -v EXCL=\"$EXCLUDED_VARS\" '",
+           "BEGIN{ n=split(EXCL, a, /,/); for(i=1;i<=n;i++){ gsub(/^ +| +$/,\"\", a[i]); low[i]=tolower(a[i]); } }",
+           "{ keep=1;",
+           "  if ($0 ~ /^export[\\t ]+[A-Za-z_][A-Za-z0-9_]*=/) {",
+           "    if (match($0, /^export[\\t ]+([A-Za-z_][A-Za-z0-9_]*)=/, m)) {",
+           "      v=tolower(m[1]);",
+           "      for(i=1;i<=n;i++){ if (length(low[i])>0 && index(v, low[i])>0) { keep=0; break; } }",
+           "    }",
+           "  }",
+           "  if (keep) print $0;",
+           "}' ",
+           "\"", src.toUri().getPath(), "\" > \"$TMP_FILE\" || cp -f \"", src.toUri().getPath(), "\" \"$TMP_FILE\"");
+
+      // Move the filtered content to the destination with error handling
+      line("mv -f \"$TMP_FILE\" \"", dest.toUri().getPath(), "\" || { echo \"ERROR: Failed to move filtered file to destination\" >&2; exit 1; }");
+
+      // Set permissions to 640 for security
+      if (dest.isAbsolute()) {
+        line("chmod 640 \"", dest.toUri().getPath(), "\" || true");
       }
+
+      // Final cleanup trap reset
+      line("trap - EXIT");
     }
 
     @Override
@@ -1536,9 +1569,46 @@ public class ContainerLaunch implements Callable<Integer> {
       // no need to worry about permissions - in secure mode
       // WindowsSecureContainerExecutor will set permissions
       // to allow NM to read the file
-      line("rem Creating copy of launch script");
-      lineWithLenCheck(String.format("copy \"%s\" \"%s\"", src.toString(),
-          dest.toString()));
+      line("rem Creating filtered copy of launch script");
+
+      // Enable delayed expansion for reliable variable usage
+      line("@setlocal EnableDelayedExpansion");
+
+      // Prepare excluded patterns from config (comma-separated)
+      String winExclude = conf.get(
+          YarnConfiguration.NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS,
+          YarnConfiguration.DEFAULT_NM_CONTAINER_DEBUG_EXCLUDE_ENV_VARS);
+      lineWithLenCheck("set EXCLUDED_VARS=", winExclude);
+      line("echo Excluding environment variables containing: %EXCLUDED_VARS% >&2");
+      line("echo This list of varaibles wont be printed even present. check yarn.nodemanager.container-debug.exclude-env-vars in yarn-site.xml >&2");
+
+      // Create a temporary file for the filtered content
+      line("set TMP_FILE=%TEMP%\\yarn_debug_%RANDOM%.tmp");
+
+      // Process each line, excluding export lines whose var name matches patterns
+      line("(");
+      line("  for /f \"usebackq tokens=* delims=\" %%a in (\"" + src.toString() + "\") do (");
+      line("    set \"line=%%a\"");
+      line("    set \"exclude=0\"");
+      line("    for %%p in (%EXCLUDED_VARS:,= %) do (");
+      line("      set \"p=%%~p\"");
+      line("      if not \"!p!\"==\"\" (");
+      line("        echo !line! | findstr /R /I ^export[ ][A-Z0-9_]*= >nul && (" );
+      line("          for /f \"tokens=2 delims== \" %%v in ('echo !line:^export =export !') do (");
+      line("            echo %%v | findstr /I \"!p!\" >nul && set exclude=1");
+      line("          )");
+      line("        )");
+      line("      )");
+      line("    )");
+      line("    if !exclude!==0 echo !line!>>\"!TMP_FILE!\"");
+      line("  )");
+      line(")");
+
+      // Move the filtered content to the destination
+      lineWithLenCheck("move /Y \"!TMP_FILE!\" \"" + dest.toString() + "\" >nul");
+
+      // Clean up if move failed
+      line("if exist \"!TMP_FILE!\" del /F /Q \"!TMP_FILE!\" >nul 2>&1");
     }
 
     @Override
